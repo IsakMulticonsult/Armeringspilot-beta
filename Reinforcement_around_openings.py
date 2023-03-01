@@ -17,7 +17,9 @@ import Autodesk.Revit.DB.Solid as SOLID
 clr.AddReference('ProtoGeometry')
 from Autodesk.DesignScript.Geometry import *
 
+
 #from Classes import *
+
 #from Functions import *
 
 # Unit conversion functions
@@ -86,7 +88,7 @@ class Opening:
 		self.local_coord = local_coord
 		self.reb_lines = reb_lines
 		self.reb_vecs = reb_vecs
-
+ 
 
 doc =  DocumentManager.Instance.CurrentDBDocument
 
