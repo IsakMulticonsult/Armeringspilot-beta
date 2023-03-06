@@ -81,13 +81,15 @@ def shorten_curve(crv, dist):
 	return short_crv
 
 class Opening:
-	def __init__(self, id, srfs=0 ,cut=0, ends=0, local_coord=0, reb_lines=0, reb_vecs=0):
+	def __init__(self, id, srfs=0 ,cut=0, ends=0, local_coord=0, reb_lines=0, reb_vecs=0, error=False, test=0):
 		self.id = id
 		self.srfs = srfs
 		self.ends = ends
 		self.local_coord = local_coord
 		self.reb_lines = reb_lines
 		self.reb_vecs = reb_vecs
+		self.error = error
+		self.test = test
  
 
 doc =  DocumentManager.Instance.CurrentDBDocument
@@ -145,95 +147,131 @@ for opening in openings:
 # Sort out surfaces inside wall
 for opening in all_openings:
 	cut_list = []
+	#test_list = []
 	for srf in opening.srfs:
 		pt = srf.PointAtParameter(0.5,0.5)
 		for elem_srf in elem_srfs:
 			dist = pt.DistanceTo(elem_srf)
-			if dist <= 0.0001:
+			if dist <= 0.001 and srf not in cut_list:
 				cut_list.append(srf)
-	opening.cut = cut_list
+	if len(cut_list) != 0:
+		opening.cut = cut_list
+	else:
+		opening.error = True
 
 # Sort out surfaces outside wall
-for i,opening in enumerate(all_openings):
-	ends = []
-	srf_pts = []
-	vecs = []
-	for srf in opening.srfs:
-		if srf not in opening.cut:
-			ends.append(srf)
-			pt = srf.PointAtParameter(0.5,0.5)
-			srf_pts.append(pt)
-			if i==0:
-				y_axis = Vector.ByTwoPoints(pt, srf.PointAtParameter(0.5,1))
-				z_axis = Vector.ByTwoPoints(pt, srf.PointAtParameter(1,0.5))
-	opening.ends = ends
-	opening.reb_vecs = [Vector.ByTwoPoints(srf_pts[0],srf_pts[1]).ToRevitType(),Vector.ByTwoPoints(srf_pts[1],srf_pts[0]).ToRevitType()]
-	origin = Line.ByStartPointEndPoint(srf_pts[0],srf_pts[1]).PointAtParameter(0.5)
-	x_axis = Vector.ByTwoPoints(srf_pts[1], srf_pts[0])
-	opening.local_coord = CoordinateSystem.ByOriginVectors(origin, x_axis, y_axis, z_axis)
+for opening in all_openings:
+	if opening.error == False:
+		ends = []
+		for srf in opening.srfs:
+			if srf not in opening.cut:
+				ends.append(srf)
+				
+		if len(ends) > 2:
+			ends_now = []
+			for i,srf in enumerate(ends):
+				s_pt = srf.PointAtParameter(0.5,0.5)
+				norm = srf.NormalAtPoint(s_pt)
+				line = Line.ByStartPointDirectionLength(s_pt,norm,100).Translate(norm.Reverse(),50)
+				for j,srf1 in enumerate(ends):
+					if i!=j:
+						bool = line.DoesIntersect(srf1)
+						if bool:
+							ends_now.append(srf)
+		else:
+			ends_now = ends
+		opening.ends = ends_now
+		srf_pts = [srf.PointAtParameter(0.5,0.5) for srf in ends_now]
+		
+
+		opening.reb_vecs = [Vector.ByTwoPoints(srf_pts[0],srf_pts[1]).ToRevitType(),Vector.ByTwoPoints(srf_pts[1],srf_pts[0]).ToRevitType()]
+		origin = Line.ByStartPointEndPoint(srf_pts[0],srf_pts[1]).PointAtParameter(0.5)
+		x_axis = Vector.ByTwoPoints(srf_pts[1], srf_pts[0])
+		pt_test = ends_now[0].PointAtParameter(0.5,0)
+		y_axis = Vector.ByTwoPoints(ends_now[0].PointAtParameter(0.5,0.5), ends_now[0].PointAtParameter(0,0.5))
+		z_axis = Vector.ByTwoPoints(ends_now[0].PointAtParameter(0.5,0.5), ends_now[0].PointAtParameter(0.5,0))
+		opening.local_coord = CoordinateSystem.ByOriginVectors(origin, x_axis, y_axis, z_axis)
+
 	
 # Get rebar curves
-for opening in all_openings:
-	coord = opening.local_coord
-	ori = coord.Origin
-	pt_y = 0
-	pt_z = 0
-	for srf in opening.cut:
-		pts_y = ori.Project(srf, coord.YAxis)
-		pts_z = ori.Project(srf, coord.ZAxis)
-		if len(pts_y) != 0:
-			pt_y = pts_y[0]
-		if len(pts_z) != 0:
-			pt_z = pts_z[0]
-	w = Vector.ByTwoPoints(ori, pt_y).Length*2+ reb_covers[0]
-	h = Vector.ByTwoPoints(ori, pt_z).Length*2+ reb_covers[0]
-	plane = Plane.ByOriginNormal(ori, coord.XAxis)
-	lines = Rectangle.ByWidthLength(plane, w, h).Explode()
-	lines_long = [extend_curve(l, 0.6) for l in lines]
-	pts = [l.PointAtParameter(0.5) for l in lines_long]
-	
-	
-	
-	dist=[reb_covers[-1]+units_mm_project(rebar_diam_mm)/2, reb_covers[-1]+(3.0/2.0)*units_mm_project(rebars[rebar_diam]),reb_covers[-1]+units_mm_project(rebar_diam_mm)/2, reb_covers[-1]+(3.0/2.0)*units_mm_project(rebars[rebar_diam])]
-	
-	
-	reb_lines_list = []
-	intersect_lines = [Line.ByStartPointDirectionLength(pt,coord.XAxis, 1000) for pt in pts]
-	intersection_pts = []
-	for line in intersect_lines:
-		for elem_srf in elem_srfs:	
-			if line.DoesIntersect(elem_srf):
-				intersection_pts.append(line.Intersect(elem_srf)[0])		
 
-	reb_lines_list.append([line.Translate(Vector.ByTwoPoints(pts[i], intersection_pts[i]), Vector.ByTwoPoints(pts[i], intersection_pts[i]).Length-dist[i]) for i,line in enumerate(lines_long)])			
+for opening in all_openings:
+	if opening.error == False:
+		t_list = []
+		coord = opening.local_coord
+		ori = coord.Origin
+		pt_y = 0
+		pt_z = 0
+		test = []
+		for srf in opening.cut:
+			pts_y = ori.Project(srf, coord.YAxis)
+			pts_z = ori.Project(srf, coord.ZAxis)
+			if len(pts_y) != 0:
+				pt_y = pts_y[0]
+				t_list.append(pts_y)
+			if len(pts_z) != 0:
+				pt_z = pts_z[0]
+				t_list.append(pts_y)
+
+		
+		# w = Vector.ByTwoPoints(ori, pt_y).Length*2+ reb_covers[0]
+		# h = Vector.ByTwoPoints(ori, pt_z).Length*2+ reb_covers[0]
+		# coord2 = CoordinateSystem.ByOriginVectors(ori, coord.ZAxis.Reverse(),coord.XAxis,coord.YAxis)
+		# plane = Plane.ByOriginNormalXAxis(ori, coord.XAxis, coord.YAxis)
+		# lines = Rectangle.ByWidthLength(plane, w, h).Explode()
+		# lines_long = [extend_curve(l, 0.6) for l in lines]
+		# pts = [l.PointAtParameter(0.5) for l in lines_long]
 	
 	
-	intersect_lines = [Line.ByStartPointDirectionLength(pt,coord.XAxis.Reverse(), 1000) for pt in pts]
-	intersection_pts2 = []
-	for line in intersect_lines:
-		for elem_srf in elem_srfs:	
-			if line.DoesIntersect(elem_srf):
-				intersection_pts2.append(line.Intersect(elem_srf)[0])
+	
+		# dist=[reb_covers[-1]+units_mm_project(rebar_diam_mm)/2, reb_covers[-1]+(3.0/2.0)*units_mm_project(rebars[rebar_diam]),reb_covers[-1]+units_mm_project(rebar_diam_mm)/2, reb_covers[-1]+(3.0/2.0)*units_mm_project(rebars[rebar_diam])]
+		
+		
+		# reb_lines_list = []
+		# intersect_lines = [Line.ByStartPointDirectionLength(pt,coord.XAxis, 100).Translate(coord.XAxis.Reverse(), 50) for pt in pts]
+		# intersection_pts = []
+		# pts_m = []
+		# lines_long_m = []
+		# dist_m = []
+		# for i,line in enumerate(intersect_lines):
+		# 	for elem_srf in elem_srfs:	
+		# 		if line.DoesIntersect(elem_srf):
+		# 			intersection_pts.append(line.Intersect(elem_srf)[0])
+		# 			if pts[i] not in pts_m:
+		# 				pts_m.append(pts[i])
+		# 				dist_m.append(dist[i])
+		# 			if lines_long[i] not in lines_long_m:
+		# 				lines_long_m.append(lines_long[i])
 				
-	reb_lines_list.append([line.Translate(Vector.ByTwoPoints(pts[i], intersection_pts2[i]), Vector.ByTwoPoints(pts[i], intersection_pts2[i]).Length-dist[i]) for i,line in enumerate(lines_long)])
-	
-	for i,line_set in enumerate(reb_lines_list):
-		for j,line in enumerate(line_set):
-			for srf in elem_srfs:
-				intersection_list = line.Intersect(srf)
-				if intersection_list.Length != 0:
-					splitted_lines = line.SplitByPoints(intersection_list)
-					dists = []
-					for line in splitted_lines:
-						dists.append(ori.DistanceTo(line))
-					min_val = min(dists)
-					min_indx = dists.index(min_val)
-					cut_line = splitted_lines[min_indx]
-					reb_lines_list[i][j] = shorten_curve(cut_line, reb_covers[-1])
-	opening.reb_lines = reb_lines_list
-	
+		
+		# intersection_pts1 = []
+		# intersection_pts2 = []
+		# for i,pt in enumerate(intersection_pts):
+		# 	if i%2!=0:
+		# 		intersection_pts1.append(pt)
+		# 	else:
+		# 		intersection_pts2.append(pt)
+		
+		# reb_lines_list.append([line.Translate(Vector.ByTwoPoints(pts_m[i], intersection_pts1[i]), Vector.ByTwoPoints(pts_m[i], intersection_pts1[i]).Length-dist_m[i]) for i,line in enumerate(lines_long_m)])			
+		# reb_lines_list.append([line.Translate(Vector.ByTwoPoints(pts_m[i], intersection_pts2[i]), Vector.ByTwoPoints(pts_m[i], intersection_pts2[i]).Length-dist_m[i]) for i,line in enumerate(lines_long_m)])
+
+		# for i,line_set in enumerate(reb_lines_list):
+		# 	for j,line in enumerate(line_set):
+		# 		for srf in elem_srfs:
+		# 			intersection_list = line.Intersect(srf)
+		# 			if intersection_list.Length != 0:
+		# 				splitted_lines = line.SplitByPoints(intersection_list)
+		# 				dists = []
+		# 				for line in splitted_lines:
+		# 					dists.append(ori.DistanceTo(line))
+		# 				min_val = min(dists)
+		# 				min_indx = dists.index(min_val)
+		# 				cut_line = splitted_lines[min_indx]
+		# 				reb_lines_list[i][j] = shorten_curve(cut_line, reb_covers[-1])
+		# opening.reb_lines = reb_lines_list
+		opening.test = t_list
 # Create rebars in Revit
-test_mode = False
+test_mode = True
 if test_mode == False:	
 	TransactionManager.Instance.EnsureInTransaction(doc)
 	
@@ -249,16 +287,25 @@ if test_mode == False:
 	
 	# Create rebars
 	for opening in all_openings:
-		both_sides = opening.reb_lines
-		vecs = opening.reb_vecs
-		for j,side in enumerate(both_sides):
-			crvs = side
-			if j%2 !=0:
-				vec = vecs[0]
-			else:
-				vec = vecs[1]
-			for j,line in enumerate(crvs):
-				rebar = Structure.Rebar.CreateFromCurves(doc, Structure.RebarStyle.Standard, bar_type, None, None, elem, vec, [line.ToRevitType()], Structure.RebarHookOrientation.Right, Structure.RebarHookOrientation.Left, True, False)
-				rebar.SetUnobscuredInView(view,1)
-				rebar.SetSolidInView(view,1)
+		if opening.error == False:
+			both_sides = opening.reb_lines
+			vecs = opening.reb_vecs
+			for j,side in enumerate(both_sides):
+				crvs = side
+				if j%2 !=0:
+					vec = vecs[0]
+				else:
+					vec = vecs[1]
+				for j,line in enumerate(crvs):
+					rebar = Structure.Rebar.CreateFromCurves(doc, Structure.RebarStyle.Standard, bar_type, None, None, elem, vec, [line.ToRevitType()], Structure.RebarHookOrientation.Right, Structure.RebarHookOrientation.Left, True, False)
+					rebar.SetUnobscuredInView(view,1)
+					rebar.SetSolidInView(view,1)
 	TransactionManager.Instance.TransactionTaskDone()
+
+hei = []
+for opening in all_openings:
+	if opening.error == False:
+		hei.append(opening.ends)
+
+
+OUT = hei
