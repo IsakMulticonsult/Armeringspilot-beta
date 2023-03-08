@@ -22,7 +22,7 @@ from Autodesk.DesignScript.Geometry import *
 
 #from Functions import *
 
-# Unit conversion functions
+# #Unit conversion functions
 def units_internal_project(num):
 	display_units = doc.GetUnits().GetFormatOptions(SpecTypeId.Length).GetUnitTypeId()
 	return UnitUtils.ConvertFromInternalUnits(float(num), display_units)
@@ -98,6 +98,8 @@ doc =  DocumentManager.Instance.CurrentDBDocument
 elem = UnwrapElement(IN[0])
 anchoring = units_mm_project(IN[1])
 rebar_diam_mm = IN[2]
+
+
 
 # Modify input
 rebar_diam = 'ø'+ str(int(rebar_diam_mm))
@@ -299,5 +301,4 @@ if test_mode == False:
 # 		hei.append(opening.cut)
 	
 
-
-OUT = hei=2
+OUT = 2

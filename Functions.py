@@ -1,3 +1,23 @@
+import clr
+
+clr.AddReference("RevitServices")
+import RevitServices
+from RevitServices.Persistence import DocumentManager
+from RevitServices.Transactions import TransactionManager
+
+clr.AddReference("RevitNodes")
+import Revit
+clr.ImportExtensions(Revit.Elements)
+clr.ImportExtensions(Revit.GeometryConversion)
+
+clr.AddReference("RevitAPI")
+from Autodesk.Revit.DB import *
+import Autodesk.Revit.DB.Solid as SOLID
+
+clr.AddReference('ProtoGeometry')
+from Autodesk.DesignScript.Geometry import *
+
+
 # Unit conversion functions
 def units_internal_project(num):
 	display_units = doc.GetUnits().GetFormatOptions(SpecTypeId.Length).GetUnitTypeId()
